@@ -1,3 +1,5 @@
+package io
+
 import org.scalatest.funsuite.AnyFunSuite
 
 sealed trait IO[A] {
@@ -24,10 +26,8 @@ object IO {
 
   def apply[A](a: => A): IO[A] = unit(a)
 
-  def forever[A, B](a: IO[A]): IO[B] = {
-    lazy val t: IO[B] = forever(a)
-    a.flatMap(_ => t)
-  }
+  def forever[A, B](a: IO[A]): IO[B] =
+    a.flatMap(_ => forever(a))
 }
 
 class IOTest extends AnyFunSuite {
