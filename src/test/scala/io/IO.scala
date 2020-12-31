@@ -1,38 +1,20 @@
 package io
 
-import org.scalatest.funsuite.AnyFunSuite
-
 sealed trait IO[A] {
-  self =>
-  def run: A
+  def map[B](f: A => B): IO[B] = flatMap(f andThen (Return(_)))
 
-  def map[B](f: A => B): IO[B] =
-    new IO[B] {
-      def run: B = f(self.run)
-    }
-
-  def flatMap[B](f: A => IO[B]): IO[B] =
-    new IO[B] {
-      def run: B = f(self.run).run
-    }
+  def flatMap[B](f: A => IO[B]): IO[B] = FlatMap(this, f)
 }
 
+case class Return[A](x: A) extends IO[A]
+case class Suspend[A](x: () => A) extends IO[A]
+case class FlatMap[A, B](m: IO[A], f: A => IO[B]) extends IO[B]
+
 object IO {
-  def unit[A](a: => A): IO[A] = new IO[A] {
-    def run: A = a
-  }
+  def apply[A](a: => A): IO[A] = Return(a)
 
-  def flatMap[A, B](fa: IO[A])(f: A => IO[B]): IO[B] = fa flatMap f
-
-  def apply[A](a: => A): IO[A] = unit(a)
+  def effect[A](a: () => A): IO[A] = Suspend(a)
 
   def forever[A, B](a: IO[A]): IO[B] =
     a.flatMap(_ => forever(a))
 }
-
-class IOTest extends AnyFunSuite {
-  test("stack overflow") {
-    IO.forever(IO { println("Waiting...") }).run
-  }
-}
-
