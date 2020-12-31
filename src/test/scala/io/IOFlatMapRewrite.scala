@@ -50,6 +50,9 @@ class IOFlatMapRewriteTest extends AnyFunSuite {
     val suspendFlatmapIo = IO.effect { () => 1 }.flatMap(_ => throw exception)
     assert(runSync(suspendFlatmapIo) == Failure(exception))
 
+    val suspendFlatmapIo2 = IO.effect { () => throw exception; 1 }.flatMap(x => IO(x + 2))
+    assert(runSync(suspendFlatmapIo2) == Failure(exception))
+
     val multiFlatmapIo = IO(1).flatMap { x => throw exception; IO(x + 1) }.flatMap(x => IO(x + 2))
     assert(runSync(multiFlatmapIo) == Failure(exception))
 
