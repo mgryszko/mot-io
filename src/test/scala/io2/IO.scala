@@ -3,6 +3,7 @@ package io2
 import org.scalatest.funsuite.AnyFunSuite
 
 import scala.annotation.tailrec
+import scala.util.{Failure, Success, Try}
 
 sealed trait IO[A] {
   def map[B](f: A => B): IO[B] = flatMap(f andThen (Return(_)))
@@ -17,41 +18,66 @@ case class FlatMap[A, B](m: IO[A], f: A => IO[B]) extends IO[B]
 object IO {
   def apply[A](a: => A): IO[A] = Return(a)
 
+  def effect[A](a: () => A): IO[A] = Suspend(a)
+
   def forever[A, B](a: IO[A]): IO[B] =
     a.flatMap(_ => forever(a))
+}
 
+object IORun {
   @tailrec
-  def run[A](io: IO[A]): A = io match {
-    case Return(x) => x
-    case Suspend(x) => x()
+  def runSync[A](io: IO[A]): Try[A] = io match {
+    case Return(x) => Success(x)
+    case Suspend(x) => Try(x())
     case FlatMap(outer, g) => outer match {
-      case Return(y) => run(g(y))
-      case Suspend(y) => run(g(y()))
-      case FlatMap(inner, f) => run(inner flatMap(x => f(x) flatMap g))
+      case Return(y) => Try(g(y)) match {
+        case Success(res) => runSync(res)
+        case Failure(e) => Failure(e)
+      }
+      case Suspend(y) => Try(g(y())) match {
+        case Success(res) => runSync(res)
+        case Failure(e) => Failure(e)
+      }
+      case FlatMap(inner, f) => runSync(inner flatMap(x => f(x) flatMap g))
     }
   }
 }
 
 class IOTest extends AnyFunSuite {
+  import IORun.runSync
+
   test("a couple of flatMaps") {
-    println(
-      IO.run(
-        IO(1)
-          .flatMap(x =>
-            IO(x + 1)
-          )
-          .flatMap(x =>
-            IO(x + 2)
-          )
-          .flatMap(x =>
-            IO(x + 3)
-          )
+    val io = IO(1)
+      .flatMap(x =>
+        IO(x + 1)
       )
-    )
+      .flatMap(x =>
+        IO(x + 2)
+      )
+      .flatMap(x =>
+        IO(x + 3)
+      )
+    assert(runSync(io) == Success(7))
   }
 
-  test("stack overflow") {
-    IO.run(IO.forever(Suspend(() => println("Waiting..."))))
+  test("error") {
+    val exception = new IllegalArgumentException("bang!")
+
+    val returnFlatmapIo = IO(1).flatMap(_ => throw exception)
+    assert(runSync(returnFlatmapIo) == Failure(exception))
+
+    val suspendFlatmapIo = IO.effect { () => 1 }.flatMap(_ => throw exception)
+    assert(runSync(suspendFlatmapIo) == Failure(exception))
+
+    val multiFlatmapIo = IO(1).flatMap { x => throw exception; IO(x + 1) }.flatMap(x => IO(x + 2))
+    assert(runSync(multiFlatmapIo) == Failure(exception))
+
+    val multiFlatmapIo2 = IO(1).flatMap(x => IO(x + 1)).flatMap { x => throw exception; IO(x + 2) }
+    assert(runSync(multiFlatmapIo2) == Failure(exception))
+  }
+
+  test("no stack overflow") {
+    runSync(IO.forever(IO.effect { () => println("Waiting...") }))
   }
 }
 
