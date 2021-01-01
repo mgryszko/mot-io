@@ -1,6 +1,5 @@
 package io
 
-import io.IOFlatMapRewriteRun.runSync
 import org.scalatest.funsuite.AnyFunSuite
 
 import scala.collection.mutable
@@ -32,12 +31,22 @@ object IOCallbacksRun {
         }
         case Failure(e) => callback(Failure(e))
       }
+      case Fail(e) => callback(Failure(e))
+      case Recover(m: IO[A], f: (Throwable => IO[A])) => eval(m) {
+        case Success(x) => callback(Success(x))
+        case Failure(e) => Try(f(e)) match {
+          case Success(x) => eval(x)(callback)
+          case Failure(ee) => callback(Failure(ee))
+        }
+      }
     })
   }
 }
 
 class IOCallbacksTest extends AnyFunSuite {
   import IOCallbacksRun.runSync
+
+  val exception = new IllegalArgumentException("bang!")
 
   test("a couple of flatMaps") {
     val io = IO(1)
@@ -54,8 +63,6 @@ class IOCallbacksTest extends AnyFunSuite {
   }
 
   test("error") {
-    val exception = new IllegalArgumentException("bang!")
-
     val returnFlatmapIo = IO(1).flatMap(_ => throw exception)
     assert(runSync(returnFlatmapIo) == Failure(exception))
 
@@ -70,6 +77,36 @@ class IOCallbacksTest extends AnyFunSuite {
 
     val multiFlatmapIo2 = IO(1).flatMap(x => IO(x + 1)).flatMap { x => throw exception; IO(x + 2) }
     assert(runSync(multiFlatmapIo2) == Failure(exception))
+  }
+
+  test("fail and recover") {
+    val failedIo = for {
+      one <- IO(1)
+      two <- IO(one + 1)
+      _ <- IO.fail[Int](exception)
+      three <- IO(two + 2)
+    } yield three
+    val recoveredIo = failedIo.recover(e => IO(-1))
+
+    assert(runSync(failedIo) == Failure(exception))
+    assert(runSync(recoveredIo) == Success(-1))
+  }
+
+  test("recovery not required") {
+    val io = for {
+      one <- IO(1)
+      two <- IO(one + 1)
+    } yield two
+    val recoveredIo = io.recover(e => IO(-1))
+
+    assert(runSync(recoveredIo) == Success(2))
+  }
+
+  test("failure in recovery") {
+    val failedIo = IO.fail[Int](exception)
+    val recoveredIo = failedIo.recover { _ => throw exception; IO(-1) }
+
+    assert(runSync(recoveredIo) == Failure(exception))
   }
 
   test("no stack overflow") {
