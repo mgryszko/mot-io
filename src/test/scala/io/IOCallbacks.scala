@@ -2,45 +2,44 @@ package io
 
 import org.scalatest.funsuite.AnyFunSuite
 
-import scala.collection.mutable
+import java.util.concurrent.{ExecutorService, Executors}
+import scala.concurrent.duration.Duration
+import scala.concurrent.{Await, Promise}
 import scala.util.{Failure, Success, Try}
 
 object IOCallbacksRun {
-  private val eventLoop: mutable.Queue[Runnable] = new mutable.Queue[Runnable]()
+  private val executor: ExecutorService = Executors.newFixedThreadPool(10)
 
   def runSync[A](io: IO[A]): Try[A] = {
-    var result: Try[Any] = null
-    eval(io) { result = _ }
-
-    while (eventLoop.nonEmpty) {
-      val task = eventLoop.dequeue()
-      task.run()
-    }
-
-    result.asInstanceOf[Try[A]]
+    val result = Promise[Any]()
+    eval(io)(result.tryComplete)
+    Await.ready(result.future, Duration.Inf).value.get.asInstanceOf[Try[A]]
   }
 
-  private def eval[A, B](io: IO[A])(callback: Try[Any] => Unit): Unit = {
-    eventLoop += (() => io match {
-      case Return(x) => callback(Success(x))
-      case Suspend(x) => callback(Try(x()))
-      case FlatMap(m: IO[A], f: (A => IO[B])) => eval(m) {
-        case Success(x) => Try(f(x)) match {
-          case Success(fx) => eval(fx)(callback)
-          case Failure(e) => callback(Failure(e))
-        }
-        case Failure(e) => callback(Failure(e))
-      }
-      case Fail(e) => callback(Failure(e))
-      case Recover(m: IO[A], f: (Throwable => IO[A])) => eval(m) {
-        case Success(x) => callback(Success(x))
-        case Failure(e) => Try(f(e)) match {
-          case Success(x) => eval(x)(callback)
-          case Failure(ee) => callback(Failure(ee))
+  private def eval[A, B](io: IO[A])(callback: Try[Any] => Unit): Unit =
+    executor.submit(new Runnable {
+      override def run() {
+        io match {
+          case Return(x) => callback(Success(x))
+          case Suspend(x) => callback(Try(x()))
+          case FlatMap(m: IO[A], f: (A => IO[B])) => eval(m) {
+            case Success(x) => Try(f(x)) match {
+              case Success(fx) => eval(fx)(callback)
+              case Failure(e) => callback(Failure(e))
+            }
+            case Failure(e) => callback(Failure(e))
+          }
+          case Fail(e) => callback(Failure(e))
+          case Recover(m: IO[A], f: (Throwable => IO[A])) => eval(m) {
+            case Success(x) => callback(Success(x))
+            case Failure(e) => Try(f(e)) match {
+              case Success(x) => eval(x)(callback)
+              case Failure(ee) => callback(Failure(ee))
+            }
+          }
         }
       }
     })
-  }
 }
 
 class IOCallbacksTest extends AnyFunSuite {
