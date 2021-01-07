@@ -1,19 +1,27 @@
 package io
 
+import io.IOCallbacksRun.runAsyncToFuture
 import org.scalatest.funsuite.AnyFunSuite
 
 import java.util.concurrent.{ExecutorService, Executors}
 import scala.concurrent.duration.Duration
-import scala.concurrent.{Await, Promise}
+import scala.concurrent.{Await, Future, Promise}
 import scala.util.{Failure, Success, Try}
 
 object IOCallbacksRun {
   private val executor: ExecutorService = Executors.newFixedThreadPool(10)
 
-  def runSync[A](io: IO[A]): Try[A] = {
+  def runSync[A](io: IO[A]): Try[A] =
+    Await.ready(runAsyncToFuture(io), Duration.Inf).value.get
+
+  def runAsync[A](io: IO[A])(callback: Try[A] => Unit) {
+    eval(io)(callback.asInstanceOf[Try[Any] => Unit])
+  }
+
+  def runAsyncToFuture[A](io: IO[A]): Future[A] = {
     val result = Promise[Any]()
     eval(io)(result.tryComplete)
-    Await.ready(result.future, Duration.Inf).value.get.asInstanceOf[Try[A]]
+    result.future.asInstanceOf[Future[A]]
   }
 
   private def eval[A, B](io: IO[A])(callback: Try[Any] => Unit): Unit =
@@ -47,7 +55,7 @@ class IOCallbacksTest extends AnyFunSuite {
 
   val exception = new IllegalArgumentException("bang!")
 
-  test("a couple of flatMaps") {
+  test("a couple of flatMaps, sync execution") {
     val io = IO(1)
       .flatMap(x =>
         IO(x + 1)
@@ -59,6 +67,15 @@ class IOCallbacksTest extends AnyFunSuite {
         IO(x + 3)
       )
     assert(runSync(io) == Success(7))
+  }
+
+  test("a couple of flatMaps, async execution") {
+    val io = for {
+      one <- IO(1)
+      two <- IO(one + 1)
+      three <- IO(two + 2)
+    } yield three + 3
+    assert(Await.result(runAsyncToFuture(io), Duration.Inf) == 7)
   }
 
   test("error") {
