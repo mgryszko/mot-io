@@ -4,7 +4,7 @@ import org.scalatest.funsuite.AnyFunSuite
 import io.IOSyntax._
 
 class IOTest extends AnyFunSuite {
-  test("a couple of flatMaps") {
+  test("flatMaps and map") {
     val io = for {
       one <- 1.pure
       plusOne <- (one + 1).pure
