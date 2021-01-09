@@ -12,6 +12,8 @@ case class Delay[+A](a: () => A) extends IO[A]
 
 case class FlatMap[A, B](io: IO[A], f: A => IO[B]) extends IO[B]
 
+case class RaiseError[A](e: Throwable) extends IO[A]
+
 trait IORun {
   def runSync[A](io: IO[A]): A
 }
@@ -28,6 +30,8 @@ object IO {
         result <- f(a)
       } yield results :+ result
     }
+
+  def raiseError[A](e: Throwable): IO[A] = RaiseError(e)
 
   def forever[A, B](a: IO[A]): IO[B] =
     a.flatMap(_ => forever(a))
