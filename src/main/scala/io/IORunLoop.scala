@@ -1,18 +1,41 @@
 package io
 
+import scala.annotation.tailrec
 import scala.util.{Failure, Success, Try}
 
 object IORunLoop extends IORun {
-  override def runSync[A](io: IO[A]): A =
-    loop(io, Seq[Any => IO[Any]]()).get.asInstanceOf[A]
+  sealed trait Bind {
+    val isHandler: Boolean
+  }
+  case class F(f: Any => IO[Any]) extends Bind {
+    override val isHandler: Boolean = false
 
-  private def loop(io: IO[Any], stack: Seq[Any => IO[Any]]): Try[Any] = io match {
+  }
+  case class H(h: Throwable => IO[Any]) extends Bind {
+    override val isHandler: Boolean = true
+  }
+
+  override def runSync[A](io: IO[A]): A =
+    loop(io, Seq[Bind]()).get.asInstanceOf[A]
+
+  @tailrec
+  private def loop(io: IO[Any], stack: Seq[Bind]): Try[Any] = io match {
     case Pure(a) => stack match {
-      case f +: tail => loop(f(a), tail)
+      case F(f) +: tail => Try(f(a)) match {
+        case Success(fa) => loop(fa, tail)
+        case Failure(e) => ???
+      }
       case _ => Success(a)
     }
-    case Delay(a) => loop(Pure(a()), stack)
-    case FlatMap(m, f) => loop(m, f +: stack)
+    case Delay(a) => Try(a()) match {
+      case Success(aEvaluated) => loop(Pure(aEvaluated), stack)
+      case Failure(e) => stack.dropWhile(!_.isHandler) match {
+        case H(h) +: tail => loop(h(e), tail)
+        case _ => Failure(e)
+      }
+    }
+    case FlatMap(m, f) => loop(m, F(f) +: stack)
     case RaiseError(e) => Failure(e)
+    case HandleError(m, h) => loop(m, H(h) +: stack)
   }
 }

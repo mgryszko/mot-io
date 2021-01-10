@@ -4,15 +4,19 @@ sealed trait IO[+A] {
   def map[B](f: A => B): IO[B] = flatMap(f andThen (Pure(_)))
 
   def flatMap[B](f: A => IO[B]): IO[B] = FlatMap(this, f)
+
+  def handleErrorWith[B](handler: Throwable => IO[B]): IO[B] = HandleError(this, handler)
 }
 
-case class Pure[+A](a: A) extends IO[A]
+case class Pure[A](a: A) extends IO[A]
 
-case class Delay[+A](a: () => A) extends IO[A]
+case class Delay[A](a: () => A) extends IO[A]
 
 case class FlatMap[A, B](io: IO[A], f: A => IO[B]) extends IO[B]
 
 case class RaiseError[A](e: Throwable) extends IO[A]
+
+case class HandleError[A, B](io: IO[A], handler: Throwable => IO[B]) extends IO[B]
 
 trait IORun {
   def runSync[A](io: IO[A]): A
