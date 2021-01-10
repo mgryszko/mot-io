@@ -23,13 +23,16 @@ object IORunLoop extends IORun {
     case Pure(a) => stack match {
       case F(f) +: tail => Try(f(a)) match {
         case Success(fa) => loop(fa, tail)
-        case Failure(e) => ???
+        case Failure(e) => dropUntilHandlerFound(stack) match {
+          case H(h) +: tail => loop(h(e), tail)
+          case _ => Failure(e)
+        }
       }
       case _ => Success(a)
     }
     case Delay(a) => Try(a()) match {
       case Success(aEvaluated) => loop(Pure(aEvaluated), stack)
-      case Failure(e) => stack.dropWhile(!_.isHandler) match {
+      case Failure(e) => dropUntilHandlerFound(stack) match {
         case H(h) +: tail => loop(h(e), tail)
         case _ => Failure(e)
       }
@@ -38,4 +41,7 @@ object IORunLoop extends IORun {
     case RaiseError(e) => Failure(e)
     case HandleError(m, h) => loop(m, H(h) +: stack)
   }
+
+  private def dropUntilHandlerFound(stack: Seq[Bind]) =
+    stack.dropWhile(!_.isHandler)
 }

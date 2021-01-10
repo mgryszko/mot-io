@@ -24,12 +24,23 @@ class IOTest extends AnyFunSuite {
     assertThrows[IllegalArgumentException] { runSync(io) }
   }
 
-  test("recover") {
+  test("recover from error in effect") {
     val io = (for {
       one <- 1.pure
       plusOne <- IO.delay(() => one / 0 + 1)
       plusTwo <- (plusOne + 2).pure
     } yield plusTwo + 3).handleErrorWith(_ => (-1).pure)
+
+    assert(runSync(io) == -1)
+  }
+
+  test("recover from error in flatMap handler") {
+    val io = 1.pure
+      .flatMap(_ => {
+        throw new IllegalArgumentException()
+        2.pure
+      })
+      .handleErrorWith(_ => (-1).pure)
 
     assert(runSync(io) == -1)
   }
