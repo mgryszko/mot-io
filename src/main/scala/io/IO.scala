@@ -1,5 +1,7 @@
 package io
 
+import scala.util.Try
+
 sealed trait IO[+A] {
   def map[B](f: A => B): IO[B] = flatMap(f andThen (Pure(_)))
 
@@ -20,6 +22,8 @@ case class HandleError[A, B](io: IO[A], handler: Throwable => IO[B]) extends IO[
 
 trait IORun {
   def runSync[A](io: IO[A]): A
+
+  def runAsync[A](io: IO[A], cb: Try[A] => Unit)
 }
 
 object IO {

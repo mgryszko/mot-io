@@ -1,11 +1,13 @@
 package io
 
-import io.IORunLoop.runSync
-import org.scalatest.funsuite.AnyFunSuite
+import io.IORunLoop.{runAsync, runSync}
 import io.IOSyntax._
+import org.scalatest.funsuite.AsyncFunSuite
 
-class IOTest extends AnyFunSuite {
-  test("flatMaps and map") {
+import scala.concurrent.Promise
+
+class IOTest extends AsyncFunSuite {
+  test("flatMaps and map run synchronously") {
     val io = for {
       one <- 1.pure
       plusOne <- IO.delay(() => one + 1)
@@ -13,6 +15,18 @@ class IOTest extends AnyFunSuite {
     } yield plusTwo + 3
 
     assert(runSync(io) == 7)
+  }
+
+  test("flatMaps and map run asynchronously") {
+    val io = for {
+      one <- 1.pure
+      plusOne <- IO.delay(() => one + 1)
+      plusTwo <- (plusOne + 2).pure
+    } yield plusTwo + 3
+
+    val resultPromise = Promise[Int]()
+    runAsync(io, resultPromise.tryComplete)
+    resultPromise.future.map(result => assert(result == 7))
   }
 
   test("raise error") {
@@ -52,4 +66,3 @@ class IOTest extends AnyFunSuite {
     assert(runSync(io) == range)
   }
 }
-
