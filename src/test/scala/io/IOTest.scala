@@ -41,13 +41,20 @@ class IOTest extends AsyncFunSuite {
     resultPromise.future.map(result => assert(result == 7))
   }
 
-  test("raise error") {
+  test("raise error, don't recover") {
     val io = for {
       one <- 1.pure
       _ <- IO.raiseError[Int](new IllegalArgumentException())
     } yield one + 1
 
     assertThrows[IllegalArgumentException] { runSync(io) }
+  }
+
+  test("raise error and recover") {
+    val io = IO.raiseError[Int](new IllegalArgumentException())
+      .handleErrorWith(_ => (-1).pure)
+
+    assert(runSync(io) == -1)
   }
 
   test("recover from error in effect") {

@@ -45,7 +45,10 @@ object IORunLoop extends IORun {
       }
     }
     case FlatMap(m, f) => loop(m, F(f) +: stack, cb)
-    case RaiseError(e) => cb(Failure(e))
+    case RaiseError(e) => dropUntilHandlerFound(stack) match {
+      case H(h) +: tail => loop(h(e), tail, cb)
+      case _ => cb(Failure(e))
+    }
     case HandleError(m, h) => loop(m, H(h) +: stack, cb)
     case Async(asyncCb) => asyncCb(a => loop(a.fold(RaiseError(_), Pure(_)), stack, cb))
   }
