@@ -26,7 +26,6 @@ object IORunLoop extends IORun {
   override def runAsync[A](io: IO[A], cb: Try[A] => Unit) =
     loop(io, Seq[Bind](), cb.asInstanceOf[Try[Any] => Unit])
 
-  @tailrec
   private def loop(io: IO[Any], stack: Seq[Bind], cb: Try[Any] => Unit): Unit = io match {
     case Pure(a) => stack match {
       case F(f) +: tail => Try(f(a)) match {
@@ -48,6 +47,7 @@ object IORunLoop extends IORun {
     case FlatMap(m, f) => loop(m, F(f) +: stack, cb)
     case RaiseError(e) => cb(Failure(e))
     case HandleError(m, h) => loop(m, H(h) +: stack, cb)
+    case Async(asyncCb) => asyncCb(a => loop(a.fold(RaiseError(_), Pure(_)), stack, cb))
   }
 
   private def dropUntilHandlerFound(stack: Seq[Bind]) =

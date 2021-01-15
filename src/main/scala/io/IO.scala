@@ -1,5 +1,6 @@
 package io
 
+import scala.concurrent.{ExecutionContext, Future}
 import scala.util.Try
 
 sealed trait IO[+A] {
@@ -20,6 +21,8 @@ case class RaiseError[A](e: Throwable) extends IO[A]
 
 case class HandleError[A, B](io: IO[A], handler: Throwable => IO[B]) extends IO[B]
 
+case class Async[A](cb: (Try[A] => Unit) => Unit) extends IO[A]
+
 trait IORun {
   def runSync[A](io: IO[A]): A
 
@@ -30,6 +33,10 @@ object IO {
   def apply[A](a: => A): IO[A] = Pure(a)
 
   def delay[A](a: () => A): IO[A] = Delay(a)
+
+  def fromFuture[A](ft: Future[A])(implicit ec: ExecutionContext): IO[A] = async(ft.onComplete)
+
+  def async[A](cb: (Try[A] => Unit) => Unit): IO[A] = Async(cb)
 
   def foreach[A, B](seq: Iterable[A])(f: A => IO[B]): IO[Iterable[B]] =
     seq.foldLeft(IO(Vector.empty[B])) { (acc, a) =>

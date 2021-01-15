@@ -4,7 +4,7 @@ import io.IORunLoop.{runAsync, runSync}
 import io.IOSyntax._
 import org.scalatest.funsuite.AsyncFunSuite
 
-import scala.concurrent.Promise
+import scala.concurrent.{Future, Promise}
 
 class IOTest extends AsyncFunSuite {
   test("flatMaps and map run synchronously") {
@@ -20,6 +20,18 @@ class IOTest extends AsyncFunSuite {
   test("flatMaps and map run asynchronously") {
     val io = for {
       one <- 1.pure
+      plusOne <- IO.delay(() => one + 1)
+      plusTwo <- (plusOne + 2).pure
+    } yield plusTwo + 3
+
+    val resultPromise = Promise[Int]()
+    runAsync(io, resultPromise.tryComplete)
+    resultPromise.future.map(result => assert(result == 7))
+  }
+
+  test("async") {
+    val io = for {
+      one <- IO.fromFuture(Future(1))
       plusOne <- IO.delay(() => one + 1)
       plusTwo <- (plusOne + 2).pure
     } yield plusTwo + 3
