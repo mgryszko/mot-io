@@ -51,6 +51,9 @@ object IORunLoop extends IORun {
     }
     case HandleError(m, h) => loop(m, H(h) +: stack, cb)
     case Async(asyncCb) => asyncCb(a => loop(a.fold(RaiseError(_), Pure(_)), stack, cb))
+    case Shift(ec) =>
+      val io = Async[Any] { cb => ec.execute(() => cb(Success(()))) }
+      loop(io, stack, cb)
   }
 
   private def dropUntilHandlerFound(stack: Seq[Bind]) =

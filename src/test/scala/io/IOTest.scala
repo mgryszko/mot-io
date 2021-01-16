@@ -32,6 +32,25 @@ class IOTest extends AnyFunSuite {
     assert(Await.result(resultPromise.future, Duration.Inf) == 7)
   }
 
+  test("no stack overflow") {
+    val range = 1 to 10000
+    val io = IO.foreach(range) { i => IO.delay(() => i) }
+
+    assert(runSync(io) == range)
+  }
+
+  test("thread shift") {
+    val io = for {
+      one <- 1.pure
+      _ <- IO.shift
+      plusOne <- IO.delay(() => one + 1)
+      _ <- IO.shift
+      plusTwo <- (plusOne + 2).pure
+    } yield plusTwo + 3
+
+    assert(runSync(io) == 7)
+  }
+
   test("async") {
     val io = for {
       one <- IO.fromFuture(Future(1))
@@ -86,12 +105,5 @@ class IOTest extends AnyFunSuite {
       .handleErrorWith(_ => (-1).pure)
 
     assert(runSync(io) == -1)
-  }
-
-  test("no stack overflow") {
-    val range = 1 to 10000
-    val io = IO.foreach(range) { i => IO.delay(() => i) }
-
-    assert(runSync(io) == range)
   }
 }
