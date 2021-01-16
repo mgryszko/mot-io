@@ -2,11 +2,14 @@ package io
 
 import io.IORunLoop.{runAsync, runSync}
 import io.IOSyntax._
-import org.scalatest.funsuite.AsyncFunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
-import scala.concurrent.{Future, Promise}
+import scala.concurrent.duration.Duration
+import scala.concurrent.{Await, ExecutionContext, Future, Promise}
 
-class IOTest extends AsyncFunSuite {
+class IOTest extends AnyFunSuite {
+  implicit val ec: ExecutionContext = ExecutionContext.global
+
   test("flatMaps and map run synchronously") {
     val io = for {
       one <- 1.pure
@@ -26,7 +29,7 @@ class IOTest extends AsyncFunSuite {
 
     val resultPromise = Promise[Int]()
     runAsync(io, resultPromise.tryComplete)
-    resultPromise.future.map(result => assert(result == 7))
+    assert(Await.result(resultPromise.future, Duration.Inf) == 7)
   }
 
   test("async") {
@@ -73,6 +76,13 @@ class IOTest extends AsyncFunSuite {
         throw new IllegalArgumentException()
         2.pure
       })
+      .handleErrorWith(_ => (-1).pure)
+
+    assert(runSync(io) == -1)
+  }
+
+  test("recover from error in asynchronous computation") {
+    val io = IO.fromFuture(Future.failed(new IllegalArgumentException()))
       .handleErrorWith(_ => (-1).pure)
 
     assert(runSync(io) == -1)
