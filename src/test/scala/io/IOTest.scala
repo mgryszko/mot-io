@@ -4,6 +4,7 @@ import io.IORunLoop.{runAsync, runSync}
 import io.IOSyntax._
 import org.scalatest.funsuite.AnyFunSuite
 
+import java.lang.Thread.sleep
 import scala.concurrent.duration.Duration
 import scala.concurrent.{Await, ExecutionContext, Future, Promise}
 
@@ -39,18 +40,6 @@ class IOTest extends AnyFunSuite {
     assert(runSync(io) == range)
   }
 
-  test("thread shift") {
-    val io = for {
-      one <- 1.pure
-      _ <- IO.shift
-      plusOne <- IO.delay(() => one + 1)
-      _ <- IO.shift
-      plusTwo <- (plusOne + 2).pure
-    } yield plusTwo + 3
-
-    assert(runSync(io) == 7)
-  }
-
   test("async") {
     val io = for {
       one <- IO.fromFuture(Future(1))
@@ -63,7 +52,30 @@ class IOTest extends AnyFunSuite {
     resultPromise.future.map(result => assert(result == 7))
   }
 
-  test("raise error, don't recover") {
+  test("thread shift") {
+    val io = for {
+      one <- 1.pure
+      _ <- IO.shift
+      plusOne <- IO.delay(() => one + 1)
+      _ <- IO.shift
+      plusTwo <- (plusOne + 2).pure
+    } yield plusTwo + 3
+
+    assert(runSync(io) == 7)
+  }
+
+  test("forking and joining") {
+    val io = for {
+      one <- 1.pure
+      fiberTwo <- (IO.delay(() => sleep(500)) *> (one + 1).pure).fork
+      plusOne <- fiberTwo.join
+      plusTwo <- (plusOne + 2).pure
+    } yield plusTwo + 3
+
+    assert(runSync(io) == 7)
+}
+
+test("raise error, don't recover") {
     val io = for {
       one <- 1.pure
       _ <- IO.raiseError[Int](new IllegalArgumentException())

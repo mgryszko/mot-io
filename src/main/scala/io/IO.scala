@@ -8,7 +8,11 @@ sealed trait IO[+A] {
 
   def flatMap[B](f: A => IO[B]): IO[B] = FlatMap(this, f)
 
+  def *> [B](m: IO[B]): IO[B] = flatMap(_ => m)
+
   def handleErrorWith[B](handler: Throwable => IO[B]): IO[B] = HandleError(this, handler)
+
+  def fork(): IO[Fiber[A]] = Fork(this)
 }
 
 case class Pure[A](a: A) extends IO[A]
@@ -25,6 +29,13 @@ case class Async[A](cb: (Try[A] => Unit) => Unit) extends IO[A]
 
 case class Shift(ec: ExecutionContext) extends IO[Unit]
 
+case class Fork[A](io: IO[A]) extends IO[Fiber[A]]
+
+case class Join[A](fiber: Fiber[A]) extends IO[A]
+
+trait Fiber[+A] {
+  def join: IO[A] = Join(this)
+}
 
 trait IORun {
   def runSync[A](io: IO[A]): A

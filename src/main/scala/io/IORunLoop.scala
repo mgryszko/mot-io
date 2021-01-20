@@ -1,6 +1,6 @@
 package io
 
-import scala.annotation.tailrec
+import java.util.concurrent.atomic.AtomicReference
 import scala.concurrent.duration.Duration
 import scala.concurrent.{Await, Promise}
 import scala.util.{Failure, Success, Try}
@@ -54,6 +54,21 @@ object IORunLoop extends IORun {
     case Shift(ec) =>
       val io = Async[Any] { cb => ec.execute(() => cb(Success(()))) }
       loop(io, stack, cb)
+    case Fork(io) =>
+      val fiberRunLoop = new FiberRunLoop(io)
+      loop(fiberRunLoop.start(), stack, cb)
+    case Join(fiber) => loop(fiber.join, stack, cb)
+  }
+
+  private class FiberRunLoop(val io: IO[Any]) extends Fiber[Any] {
+    private val result: AtomicReference[Try[Any]] = new AtomicReference(null)
+
+    def start(): IO[Fiber[Any]] = {
+      loop(io, Seq[Bind](), result.set)
+      Pure(this)
+    }
+
+    override def join: IO[Any] = result.get.fold(RaiseError(_), Pure(_))
   }
 
   private def dropUntilHandlerFound(stack: Seq[Bind]) =
